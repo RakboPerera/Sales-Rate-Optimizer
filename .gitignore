@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+*.db
+*.db-journal
+backend/storage/*.db
+frontend/dist/
+.vite/
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+.claude/settings.local.json

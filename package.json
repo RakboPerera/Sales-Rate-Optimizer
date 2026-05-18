@@ -1,0 +1,13 @@
+{
+  "name": "sales-rate-optimizer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Octave Sales Rate Optimizer — fuel bunkering DP scheduler",
+  "scripts": {
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && node server.js",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && npm install && node server.js"
+  }
+}
