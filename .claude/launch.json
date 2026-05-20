@@ -13,6 +13,13 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["backend/server.js"],
       "port": 9876
+    },
+    {
+      "name": "bu-html-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const http=require('http');const fs=require('fs');http.createServer((req,res)=>{const h=fs.readFileSync('bu_scenarios.html');res.writeHead(200,{'Content-Type':'text/html'});res.end(h)}).listen(process.env.PORT||7878,()=>console.log('serving on',process.env.PORT||7878))"],
+      "port": 7878,
+      "autoPort": true
     }
   ]
 }
