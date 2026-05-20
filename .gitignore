@@ -12,3 +12,6 @@ Thumbs.db
 .idea/
 .vscode/
 .claude/settings.local.json
+
+# Generated artifacts — regenerate with `node backend/bu_html_export.mjs`
+bu_scenarios.html
