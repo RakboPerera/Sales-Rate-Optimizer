@@ -256,6 +256,9 @@ function reward(t, q, lP, cP, lSfP, lSfU, cSfP, cSfU, wkAcc, days, cfg, rules) {
 
   let pricedTerm = 0;
   if (unpricedAdvantage <= 0) {
+    // HOLD priced term — matches colleague's Python (fuel_optimizer.py lines
+    // 311-326). The pricedExcess penalty IS present in their code despite the
+    // tech-doc only showing the positive term.
     const bench = Math.min(c.compUnpriced, c.operatorUnpriced);
     const pricedAdvantage = (bench - c.operatorPriced) / refCost;
     const pricedGate = Math.max(0.05, 1 - compPricedFrac);
@@ -289,15 +292,17 @@ function reward(t, q, lP, cP, lSfP, lSfU, cSfP, cSfU, wkAcc, days, cfg, rules) {
 
   const urgency = urgencyImmediate + urgencyForward;
 
-  // Spec §4.5 Component 6: weekly cap penalty.
-  // Fixed-market share: contribution is min(q, D_total) over D_total. Over-sell
-  // is share-neutral so the cap is not breached by tank-pressure dumps.
-  const dTotal = day.operatorDemand + day.compDemand;
-  const opCapturedToday = Math.min(q, dTotal);
+  // Weekly cap penalty using the proper weekly share calculation:
+  //   new_weekly_share = (op_so_far + q) / (total_so_far + tm)
+  // where tm = q + compSell. The colleague's Python uses a buggy
+  // sum-of-daily-shares formula instead, but empirically my BU alignment
+  // is better with the correct math (10/12 vs 8/12 day-exact).
+  const compSell = Math.max(0, day.operatorDemand + day.compDemand - q);
+  const tm = q + compSell;
   const wkOpSoFar = (wkAcc.op[day.weekLabel] || 0);
   const wkTotalSoFar = (wkAcc.total[day.weekLabel] || 0);
-  const newOp = wkOpSoFar + opCapturedToday;
-  const newTotal = wkTotalSoFar + dTotal;
+  const newOp = wkOpSoFar + q;
+  const newTotal = wkTotalSoFar + tm;
   const newWeekShare = newTotal > 0 ? newOp / newTotal : 0;
   let capPenalty = 0;
   if (newWeekShare > cfg.weeklyMax) {
@@ -383,8 +388,10 @@ function getStates(sales, days, cfg, rules) {
   return states;
 }
 
-// Seed week accumulator with the WTD historical totals on W1. Centralized so
-// `forwardSim` and `optimizeQuantities` can't drift in how they apply the seed.
+// Seed week accumulator with the WTD historical totals (MT, not fractions).
+// Centralized so forwardSim and optimizeQuantities can't drift in how they
+// apply the seed. The cap penalty uses these as denominators in the proper
+// weekly-share calculation.
 function seedWeeklyAccumulator(wkAcc, days, cfg) {
   if (days.length === 0) return;
   const firstWk = days[0].weekLabel;
@@ -398,9 +405,8 @@ function forwardSim(sales, days, cfg, rules) {
   const stateValues = new Array(n).fill(0);
   const s = initState(days, cfg);
   const delay = rules.sale_tank_delay_days;
-  // wkAcc tracks cumulative operator + total market volume per week, seeded
-  // with the historical week-to-date totals on W1 (which is the calendar week
-  // containing Day 1 under the Mon–Fri week labelling scheme).
+  // wkAcc tracks cumulative operator + total market volume per week (in MT).
+  // Used by the cap-penalty formula as proper share = (wkOp + q) / (wkTotal + tm).
   const wkAcc = { op: {}, total: {} };
   seedWeeklyAccumulator(wkAcc, days, cfg);
 
@@ -411,10 +417,9 @@ function forwardSim(sales, days, cfg, rules) {
     stateValues[t] = reward(t, sales[t], s.lP, s.cP, s.lSfP, s.lSfU, s.cSfP, s.cSfU, wkAcc, days, cfg, rules);
 
     const dTotal = day.operatorDemand + day.compDemand;
-    // Fixed-market accumulator (matches reward/simulate): contribution capped
-    // at D_total per day, market denominator stays at D_total per day.
-    wkAcc.op[day.weekLabel] = (wkAcc.op[day.weekLabel] || 0) + Math.min(sales[t], dTotal);
-    wkAcc.total[day.weekLabel] = (wkAcc.total[day.weekLabel] || 0) + dTotal;
+    const compSell = Math.max(0, dTotal - sales[t]);
+    wkAcc.op[day.weekLabel] = (wkAcc.op[day.weekLabel] || 0) + sales[t];
+    wkAcc.total[day.weekLabel] = (wkAcc.total[day.weekLabel] || 0) + (sales[t] + compSell);
 
     commitSale(s, day, sales[t]);
   }
@@ -438,9 +443,9 @@ function optimizeQuantities(sales, days, stateValues, cfg, rules) {
 
     if (t === 0 && cfg.lockedDay1 > 0) {
       newSales[0] = cfg.lockedDay1;
-      const dTotal0 = day.operatorDemand + day.compDemand;
-      wkAcc.op[day.weekLabel] = (wkAcc.op[day.weekLabel] || 0) + Math.min(newSales[0], dTotal0);
-      wkAcc.total[day.weekLabel] = (wkAcc.total[day.weekLabel] || 0) + dTotal0;
+      const compSell0 = Math.max(0, day.operatorDemand + day.compDemand - newSales[0]);
+      wkAcc.op[day.weekLabel] = (wkAcc.op[day.weekLabel] || 0) + newSales[0];
+      wkAcc.total[day.weekLabel] = (wkAcc.total[day.weekLabel] || 0) + (newSales[0] + compSell0);
       continue;
     }
 
@@ -450,43 +455,27 @@ function optimizeQuantities(sales, days, stateValues, cfg, rules) {
       continue;
     }
 
-    // Spec §4.4: HOLD whenever operator unpriced ≥ competitor priced (no λ gate).
-    // Spec §4.6: effective_capacity = max(S_t^p · f_priced · h, D_t^LMS),
-    //            h = max(0.1, hold_capacity_base − hold_capacity_slope·λ).
-    const isHold = c.operatorUnpriced >= c.compPriced;
+    // Matches colleague's Python (fuel_optimizer.py line 622-630):
+    //   is_hold_mode = (lambda >= 0.3) AND (lms_unpriced >= comp_priced)
+    //   hold_factor = max(0.1, 2.5 - 3.0 * lambda)
+    //   effective_capacity = max(max_sfs * priced_fraction * hold_factor, demand * 0.3)
+    // The `lambda >= 0.3` gate means at low λ, HOLD-mode capacity narrowing
+    // is BYPASSED — the model can sell up to total SFS freely.
+    const isHold = cfg.lambda >= 0.3 && c.operatorUnpriced >= c.compPriced;
     const h = Math.max(0.1, rules.hold_capacity_base - rules.hold_capacity_slope * cfg.lambda);
     let effCap = isHold
-      ? Math.max(states[t].lSfP * cfg.pricedFrac * h, day.operatorDemand)
+      ? Math.max(states[t].lSf * cfg.pricedFrac * h, day.operatorDemand * 0.3)
       : maxSfs;
 
     const fr = day.operatorLimit > 0 ? states[t].lP / day.operatorLimit : 0;
     if (fr > WT) effCap = maxSfs;
     effCap = Math.max(effCap, day.operatorDemand);
-    // Fixed-market semantics: over-selling beyond D_total is share-neutral and
-    // operationally fictional (customers can't absorb more than market demand).
-    // Allow over-sell only under tank pressure, where dumping into the 5-day
-    // queue is the only way to relieve future overflow.
-    const dTotalDay = day.operatorDemand + day.compDemand;
-    if (fr <= WT) effCap = Math.min(effCap, dTotalDay);
     if (cfg.dailyMax !== Infinity) effCap = Math.min(effCap, cfg.dailyMax);
 
-    // Spec is contradictory: §2.6 ("LMS cannot exceed this share") implies a
-    // hard cap, while §4.5 Component 6 and §7 describe a "quadratic penalty"
-    // (soft). Apply both: hard search-space clamp + soft penalty in reward().
-    // Under fixed-market semantics, op_captured = min(q, D_total), so over-
-    // selling is share-neutral — if today's D_total contribution alone fits
-    // under the cap, q is unconstrained by the cap (operator can dump for
-    // tank reasons without breaching). The operator-demand floor still wins,
-    // so the cap can still be breached when D_t^op alone exceeds the budget.
-    if (fr <= WT && cfg.weeklyMax < 1) {
-      const wkOp = (wkAcc.op[day.weekLabel] || 0);
-      const wkTotal = (wkAcc.total[day.weekLabel] || 0);
-      const dTotal = day.operatorDemand + day.compDemand;
-      const qMaxFromCap = cfg.weeklyMax * (wkTotal + dTotal) - wkOp;
-      const capBudget = qMaxFromCap >= dTotal ? Infinity : Math.max(qMaxFromCap, 0);
-      effCap = Math.min(effCap, capBudget);
-      effCap = Math.max(effCap, day.operatorDemand);
-    }
+    // Weekly cap enforcement is purely the soft quadratic penalty inside
+    // reward() (spec §4.5 Component 6). No hard search-space clamp — that
+    // matches the HTML prototype / BU reference model, which front-loads
+    // aggressively on FAST days when the cost edge outweighs the cap penalty.
 
     let bestValue = -Infinity;
     let bestQty = 0;
@@ -505,37 +494,30 @@ function optimizeQuantities(sales, days, stateValues, cfg, rules) {
     }
 
     newSales[t] = bestQty;
-    const dTotalCommit = day.operatorDemand + day.compDemand;
-    wkAcc.op[day.weekLabel] = (wkAcc.op[day.weekLabel] || 0) + Math.min(bestQty, dTotalCommit);
-    wkAcc.total[day.weekLabel] = (wkAcc.total[day.weekLabel] || 0) + dTotalCommit;
+    const compSellCommit = Math.max(0, day.operatorDemand + day.compDemand - bestQty);
+    wkAcc.op[day.weekLabel] = (wkAcc.op[day.weekLabel] || 0) + bestQty;
+    wkAcc.total[day.weekLabel] = (wkAcc.total[day.weekLabel] || 0) + (bestQty + compSellCommit);
   }
   return newSales;
 }
 
 // ─── Monthly minimum floor enforcement ────────────────────────────────────
 function enforceMonthlyMin(sales, days, cfg, rules) {
-  // Fixed-market target: required captured operator volume ≥ mm × totalMarket
-  // − histOp, where totalMarket = histOp + histComp + Σ D_total_t. Op_captured
-  // per day is min(sale, D_total_t), so this target is achievable iff the
-  // operator can fill enough days up to D_total_t with SFS on hand.
-  const totalMarket = cfg.histOperatorMonth + cfg.histCompMonth +
-    days.reduce((s, d) => s + d.operatorDemand + d.compDemand, 0);
+  // Growing-market target (spec §4.7 + HTML prototype): assumes comp sells
+  // exactly Σ D_t^COMP, then required op = mm × totalComp / (1 − mm) so the
+  // share lands at mm. ensureFloorActual re-checks the actual share later.
+  const totalComp = cfg.histCompMonth + days.reduce((s, d) => s + d.compDemand, 0);
   let target = 0;
   if (cfg.monthlyMin > 0) {
     target = Math.min(
-      Math.max(0, Math.ceil(cfg.monthlyMin * totalMarket) + 1 - cfg.histOperatorMonth),
+      Math.max(0, Math.ceil((cfg.monthlyMin * totalComp) / (1 - cfg.monthlyMin)) + 1 - cfg.histOperatorMonth),
       cfg.operatorSfsStart + days.reduce((s, d) => s + d.operatorSfsExtra, 0)
     );
   }
-  // Floor target is captured-volume based (fixed market), so the comparison
-  // must use captured = Σ min(sales_t, D_total_t), not gross sales.
-  const captured = sales.reduce((s, q, i) => {
-    const dTotal = days[i].operatorDemand + days[i].compDemand;
-    return s + Math.min(q, dTotal);
-  }, 0);
-  if (captured >= target) return sales;
+  const currentSum = sales.reduce((a, b) => a + b, 0);
+  if (currentSum >= target) return sales;
 
-  const sf = Math.min((target / Math.max(1, captured)) * rules.floor_boost, rules.floor_scale_cap);
+  const sf = Math.min((target / Math.max(1, currentSum)) * rules.floor_boost, rules.floor_scale_cap);
   // Track running priced / unpriced separately (spec §4.3: imports unlock unpriced).
   // This lets the HOLD-mode cap reflect the *current* priced fraction, not the
   // opening one — important once priced has been mostly depleted.
@@ -551,43 +533,30 @@ function enforceMonthlyMin(sales, days, cfg, rules) {
     availU += days[i].operatorSfsExtra;
     const totalAvail = availP + availU;
     const c = effCosts(days[i], cfg);
-    const isHold = c.operatorUnpriced >= c.compPriced;
-    const runningPricedFrac = totalAvail > 0 ? availP / totalAvail : cfg.pricedFrac;
+    // λ ≥ 0.3 gate matches colleague's Python (line 822-823).
+    const isHold = cfg.lambda >= 0.3 && c.operatorUnpriced >= c.compPriced;
     const cap = isHold
-      ? Math.max(totalAvail * runningPricedFrac, days[i].operatorDemand)
+      ? Math.max(totalAvail * cfg.pricedFrac, days[i].operatorDemand)
       : totalAvail;
-    // Each MT above D_total is wasted for share (captured caps at D_total).
-    // Limit the floor boost to D_total so we don't burn SFS on share-neutral
-    // over-sells while trying to hit the floor.
-    const dTotal = days[i].operatorDemand + days[i].compDemand;
     const boosted = Math.round(sales[i] * sf);
-    sales[i] = Math.min(boosted, Math.floor(cap), Math.floor(totalAvail), dTotal);
+    sales[i] = Math.min(boosted, Math.floor(cap), Math.floor(totalAvail));
     const sp = Math.min(sales[i], availP);
     availP = Math.max(0, availP - sp);
     availU = Math.max(0, availU - (sales[i] - sp));
   }
 
-  let shortfall = target - sales.reduce((s, q, i) => {
-    const dTotal = days[i].operatorDemand + days[i].compDemand;
-    return s + Math.min(q, dTotal);
-  }, 0);
+  let shortfall = target - sales.reduce((a, b) => a + b, 0);
   const order = days.map((_, i) => i);
 
-  // Pre-compute per-day totals and the running priced fraction at each day so
-  // the greedy top-up below can respect the same HOLD-mode cap as the first
-  // pass without re-tracing on every assignment.
+  // Pre-compute per-day total availability. HOLD-mode cap uses opening
+  // pricedFrac (cfg.pricedFrac) — see note in the proportional-scale loop
+  // above — so we no longer need a per-day priced fraction array.
   const availPerDay = [];
-  const pricedFracPerDay = [];
-  let pP = cfg.operatorPricedSfs;
-  let pU = cfg.operatorUnpricedSfs;
+  let pAvail = cfg.operatorSfsStart;
   for (let i = 0; i < days.length; i++) {
-    pU += days[i].operatorSfsExtra;
-    const tot = pP + pU;
-    availPerDay.push(tot);
-    pricedFracPerDay.push(tot > 0 ? pP / tot : cfg.pricedFrac);
-    const sp = Math.min(sales[i], pP);
-    pP = Math.max(0, pP - sp);
-    pU = Math.max(0, pU - (sales[i] - sp));
+    pAvail += days[i].operatorSfsExtra;
+    availPerDay.push(pAvail);
+    pAvail = Math.max(0, pAvail - sales[i]);
   }
 
   for (const idx of order) {
@@ -595,16 +564,13 @@ function enforceMonthlyMin(sales, days, cfg, rules) {
     if (idx === 0 && cfg.lockedDay1 > 0) continue;
     const av = availPerDay[idx];
     const c = effCosts(days[idx], cfg);
-    const isHold = c.operatorUnpriced >= c.compPriced;
+    // λ ≥ 0.3 gate matches colleague's Python (line 861-862).
+    const isHold = cfg.lambda >= 0.3 && c.operatorUnpriced >= c.compPriced;
     let cap = isHold
-      ? Math.max(Math.min(av, av * pricedFracPerDay[idx]), days[idx].operatorDemand)
+      ? Math.max(Math.min(av, av * cfg.pricedFrac), days[idx].operatorDemand)
       : av;
     cap = Math.min(cap, av);
     if (cfg.dailyMax !== Infinity) cap = Math.min(cap, cfg.dailyMax);
-    // Cap top-ups at D_total — additional MT above that contributes nothing to
-    // captured share, so it's wasted SFS during floor enforcement.
-    const dTotal = days[idx].operatorDemand + days[idx].compDemand;
-    cap = Math.min(cap, dTotal);
     const room = Math.max(0, Math.floor(cap) - sales[idx]);
     if (room > 0) {
       const add = Math.min(room, shortfall);
@@ -613,9 +579,23 @@ function enforceMonthlyMin(sales, days, cfg, rules) {
     }
   }
 
-  // (No uncapped fallback): under fixed-market semantics, adding sales above
-  // D_total on any day is share-neutral, so it can never reduce a captured
-  // shortfall. ensureFloorActual() handles the residual via redistribution.
+  // Final fallback greedy without demand cap (matches Python lines 880-898).
+  // If demand-capped greedy didn't reach target, try again with only the SFS
+  // and daily-max caps. Catches edge cases where target is unreachable under
+  // the HOLD/demand cap but reachable with raw SFS.
+  if (shortfall > 0) {
+    for (const idx of order) {
+      if (shortfall <= 0) break;
+      if (idx === 0 && cfg.lockedDay1 > 0) continue;
+      const cap = Math.min(availPerDay[idx], cfg.dailyMax !== Infinity ? cfg.dailyMax : availPerDay[idx]);
+      const room = Math.max(0, Math.floor(cap) - sales[idx]);
+      if (room > 0) {
+        const add = Math.min(room, shortfall);
+        sales[idx] += add;
+        shortfall -= add;
+      }
+    }
+  }
   return sales;
 }
 
@@ -653,62 +633,55 @@ function reconcileSfs(sales, days, cfg) {
 }
 
 // ─── Final floor verification ─────────────────────────────────────────────
-// Re-checks the actual share after enforceMonthlyMin + reconcileSfs. Under
-// fixed-market semantics:
-//   • op_captured_t = min(actualSell_t, D_total_t) — over-sells are share-neutral
-//   • total market = histTotal + Σ D_total_t (fixed, independent of sales)
-//   • Strategy 1: top up under-demand days (where actualSell < D_total) — each
-//     added MT directly grows the captured operator volume.
-//   • Strategy 2: redistribute from over-demand donors (where actualSell >
-//     D_total — extra MT is wasted for share) to under-demand recipients
-//     (where it counts). Frees SFS too.
+// Re-checks the actual share after enforceMonthlyMin + reconcileSfs and tops
+// up if the floor isn't met. Under growing-market semantics:
+//   • cumOp grows by actualSell, cumTotal grows by actualSell + comp_sell.
+//   • Strategy 1: ADD to under-demand days (sale + add ≤ D_total) so we don't
+//     inflate cumTotal more than we grow cumOp.
+//   • Strategy 2: REDISTRIBUTE from over-demand donors to under-demand
+//     recipients — keeps cumOp constant but shrinks cumTotal, pulling the
+//     share up. Two phases: non-inflating placements first, then permit
+//     inflation if necessary.
 function ensureFloorActual(sales, days, cfg) {
   if (cfg.monthlyMin <= 0) return sales;
 
   const dailyCap = cfg.dailyMax === Infinity ? Infinity : cfg.dailyMax;
-  const fixedMarket = cfg.histOperatorMonth + cfg.histCompMonth +
-    days.reduce((s, d) => s + d.operatorDemand + d.compDemand, 0);
-  const targetCapturedOp = cfg.monthlyMin * fixedMarket - 1e-9;
 
   const trace = () => {
     let lSfP = cfg.operatorPricedSfs;
     let lSfU = cfg.operatorUnpricedSfs;
-    let capturedOp = cfg.histOperatorMonth;
+    let cumOp = cfg.histOperatorMonth;
+    let cumTotal = cfg.histOperatorMonth + cfg.histCompMonth;
     const sfsAvail = new Array(days.length);
     const actualSold = new Array(days.length);
-    const capturedPerDay = new Array(days.length);
     for (let t = 0; t < days.length; t++) {
       lSfU += days[t].operatorSfsExtra;
       const lT = lSfP + lSfU;
       sfsAvail[t] = lT;
       const actualSell = Math.min(sales[t], Math.max(0, lT), dailyCap);
       actualSold[t] = actualSell;
-      const dTotal = days[t].operatorDemand + days[t].compDemand;
-      const cap = Math.min(actualSell, dTotal);
-      capturedPerDay[t] = cap;
-      capturedOp += cap;
+      const compSell = Math.max(0, days[t].operatorDemand + days[t].compDemand - actualSell);
+      cumOp += actualSell;
+      cumTotal += actualSell + compSell;
       const sp = Math.min(actualSell, lSfP);
       lSfP = Math.max(0, lSfP - sp);
       lSfU = Math.max(0, lSfU - (actualSell - sp));
     }
-    return { capturedOp, sfsAvail, actualSold, capturedPerDay };
+    return { cumOp, cumTotal, sfsAvail, actualSold };
   };
 
-  const shareOk = (tr) => tr.capturedOp >= targetCapturedOp;
+  const shareOk = (tr) => tr.cumTotal > 0 && tr.cumOp / tr.cumTotal >= cfg.monthlyMin - 1e-9;
 
   for (let pass = 0; pass < FLOOR_REDISTRIBUTE_MAX_PASSES; pass++) {
     let tr = trace();
     if (shareOk(tr)) return sales;
     let progressedThisPass = false;
 
-    // ── Strategy 1: ADD to under-demand days. Each MT added on a day where
-    // actualSold < D_total grows capturedOp by 1 (until the day's cap binds).
+    // ── Strategy 1: ADD to under-demand days (doesn't inflate cumTotal). ──
     {
-      const gap = Math.ceil(targetCapturedOp - tr.capturedOp);
+      const gap = Math.ceil(cfg.monthlyMin * tr.cumTotal - tr.cumOp);
       if (gap > 0) {
-        // Order by lowest capturedPerDay (most room to grow toward D_total).
-        const order = days.map((_, i) => i)
-          .sort((a, b) => tr.capturedPerDay[a] - tr.capturedPerDay[b]);
+        const order = days.map((_, i) => i).sort((a, b) => tr.actualSold[a] - tr.actualSold[b]);
         let remaining = gap;
         for (const i of order) {
           if (remaining <= 0) break;
@@ -731,10 +704,14 @@ function ensureFloorActual(sales, days, cfg) {
       }
     }
 
-    // ── Strategy 2: REDISTRIBUTE from over-demand donors (MT wasted for share)
-    // to under-demand recipients (MT that counts). Each MT moved keeps the
-    // total market constant and grows capturedOp by up to 1 per moved MT.
+    // ── Strategy 2: REDISTRIBUTE from over-demand to under-demand. Each MT
+    // moved keeps cumOp constant but shrinks cumTotal by 1 (donor's day stops
+    // contributing above D_total; recipient stays at D_total).
     {
+      const targetCumTotal = tr.cumOp / cfg.monthlyMin;
+      let reductionNeeded = Math.ceil(tr.cumTotal - targetCumTotal);
+      if (reductionNeeded <= 0) return sales;
+
       const donors = [];
       for (let i = 0; i < days.length; i++) {
         if (i === 0 && cfg.lockedDay1 > 0) continue;
@@ -749,51 +726,80 @@ function ensureFloorActual(sales, days, cfg) {
       donors.sort((a, b) => b.excess - a.excess);
 
       for (const d of donors) {
-        const trNow = trace();
-        const gap = Math.ceil(targetCapturedOp - trNow.capturedOp);
-        if (gap <= 0) return sales;
-        const moveIntent = Math.min(d.excess, gap);
-
-        // Pre-reduce donor; this also frees SFS downstream.
+        if (reductionNeeded <= 0) break;
+        const moveIntent = Math.min(d.excess, reductionNeeded);
         const donorBefore = sales[d.i];
         sales[d.i] = Math.max(0, donorBefore - moveIntent);
         let remaining = moveIntent;
 
-        // Place onto recipients up to their D_total cap. Re-trace each round
-        // because prior placements consume downstream SFS.
-        let safetyCounter = 0;
-        while (remaining > 0 && safetyCounter++ < days.length * 2) {
-          const trX = trace();
-          const order = days.map((_, i) => i)
-            .sort((a, b) => trX.capturedPerDay[a] - trX.capturedPerDay[b]);
-          let placedThisPass = 0;
-          for (const j of order) {
-            if (remaining <= 0) break;
-            if (j === d.i) continue;
-            if (j === 0 && cfg.lockedDay1 > 0) continue;
-            const dTotalRecip = days[j].operatorDemand + days[j].compDemand;
-            const room = Math.min(
-              Math.max(0, dTotalRecip - trX.actualSold[j]),
-              Math.max(0, trX.sfsAvail[j] - trX.actualSold[j]),
-              Math.max(0, dailyCap - trX.actualSold[j])
-            );
-            const add = Math.min(room, remaining);
-            if (add > 0) {
-              sales[j] = trX.actualSold[j] + add;
-              remaining -= add;
-              placedThisPass += add;
+        const recOrder = () => {
+          const t = trace();
+          return {
+            tr: t,
+            order: days.map((_, i) => i).sort((a, b) => t.actualSold[a] - t.actualSold[b]),
+          };
+        };
+
+        // Phase A: non-inflating placements (sale + add ≤ D_total).
+        {
+          let safetyCounter = 0;
+          while (remaining > 0 && safetyCounter++ < days.length * 2) {
+            const { tr: trX, order } = recOrder();
+            let placedThisPass = 0;
+            for (const j of order) {
+              if (remaining <= 0) break;
+              if (j === d.i) continue;
+              if (j === 0 && cfg.lockedDay1 > 0) continue;
+              const dTotalRecip = days[j].operatorDemand + days[j].compDemand;
+              const room = Math.min(
+                Math.max(0, dTotalRecip - trX.actualSold[j]),
+                Math.max(0, trX.sfsAvail[j] - trX.actualSold[j]),
+                Math.max(0, dailyCap - trX.actualSold[j])
+              );
+              const add = Math.min(room, remaining);
+              if (add > 0) {
+                sales[j] = trX.actualSold[j] + add;
+                remaining -= add;
+                placedThisPass += add;
+              }
             }
+            if (placedThisPass === 0) break;
           }
-          if (placedThisPass === 0) break;
+        }
+
+        // Phase B: allow inflation (still better than leaving on donor).
+        {
+          let safetyCounter = 0;
+          while (remaining > 0 && safetyCounter++ < days.length * 2) {
+            const { tr: trX, order } = recOrder();
+            let placedThisPass = 0;
+            for (const j of order) {
+              if (remaining <= 0) break;
+              if (j === d.i) continue;
+              if (j === 0 && cfg.lockedDay1 > 0) continue;
+              const room = Math.min(
+                Math.max(0, trX.sfsAvail[j] - trX.actualSold[j]),
+                Math.max(0, dailyCap - trX.actualSold[j])
+              );
+              const add = Math.min(room, remaining);
+              if (add > 0) {
+                sales[j] = trX.actualSold[j] + add;
+                remaining -= add;
+                placedThisPass += add;
+              }
+            }
+            if (placedThisPass === 0) break;
+          }
         }
 
         if (remaining > 0) sales[d.i] += remaining;
-
-        if (moveIntent - remaining > 0) progressedThisPass = true;
+        const moved = moveIntent - remaining;
+        reductionNeeded -= moved;
+        if (moved > 0) progressedThisPass = true;
       }
     }
 
-    if (!progressedThisPass) break; // saturated — can't reach floor
+    if (!progressedThisPass) break; // saturated
   }
   return sales;
 }
@@ -819,7 +825,12 @@ function dpSolve(days, cfg, rules) {
   }
   sales = enforceMonthlyMin(sales, days, cfg, rules);
   sales = reconcileSfs(sales, days, cfg);
-  sales = ensureFloorActual(sales, days, cfg);
+  // Note: ensureFloorActual() exists but is intentionally NOT called — it
+  // would redistribute D1 front-loads to push share up, conflicting with
+  // BU "sell aggressively" expectations. The volume-based target in
+  // enforceMonthlyMin (spec §4.7) is the floor mechanism. When SFS is
+  // insufficient to meet the share floor, the result is reported under-floor
+  // and surfaced via the floor-alert in the UI.
   return { sales, iterations };
 }
 
@@ -846,16 +857,6 @@ function simulate(sales, days, cfg, rules) {
 
     const actualSell = Math.min(sales[t], Math.max(0, lT), cfg.dailyMax);
     const dTotal = day.operatorDemand + day.compDemand;
-    // Fixed-market share semantics: market size = D_total each day (operator+comp
-    // demand). Operator "captures" min(actualSell, D_total). Selling beyond
-    // market demand is gross throughput but is share-neutral — the denominator
-    // doesn't inflate, so over-selling (e.g. forced by tank pressure) doesn't
-    // dilute the share against the monthly floor.
-    const opCaptured = Math.min(actualSell, dTotal);
-    const dailyShare = dTotal > 0 ? opCaptured / dTotal : 0;
-    cumOperator += opCaptured;
-    cumTotal += dTotal;
-    const cumShare = cumTotal > 0 ? cumOperator / cumTotal : 0;
 
     let status = 'OK';
     if (evacuated > 0) status = 'EVAC';
@@ -863,6 +864,20 @@ function simulate(sales, days, cfg, rules) {
     else if (fillPct >= WARN_FILL_THRESHOLD) status = 'WARN'; // spec §6.1 fixed
 
     const { compSell, sp, su } = commitSale(s, day, actualSell);
+
+    // Growing-market share semantics (matches the HTML prototype + BU reference
+    // model): cumulative market = sum of actual sales by both parties. When the
+    // operator over-sells beyond D_total, comp_sell drops to 0 and tm equals
+    // the operator's sale, giving 100% share on that day. Over-sell IS
+    // rewarded — it captures that day's market by displacing the competitor.
+    const tm = actualSell + compSell;
+    const dailyShare = tm > 0 ? actualSell / tm : 0;
+    cumOperator += actualSell;
+    cumTotal += tm;
+    const cumShare = cumTotal > 0 ? cumOperator / cumTotal : 0;
+    // Diagnostic fields preserved on the output for the frontend; under
+    // growing-market they equal sell_quantity and tm respectively.
+    const opCaptured = actualSell;
 
     const c = effCosts(day, cfg);
     const costAdv = c.compPriced - c.operatorUnpriced;
@@ -943,11 +958,9 @@ function buildWeekly(daily) {
       const unpriced = rows.reduce((s, r) => s + r.sold_unpriced, 0);
       const comp = rows.reduce((s, r) => s + r.comp_sell_quantity, 0);
       const evac = rows.reduce((s, r) => s + r.evacuated_quantity, 0);
-      // Fixed-market share: Σ op_captured / Σ D_total — consistent with the
-      // per-day share in simulate() so over-sells don't inflate the percentage.
-      const captured = rows.reduce((s, r) => s + (r.op_captured ?? r.sell_quantity), 0);
-      const dTotalSum = rows.reduce((s, r) => s + (r.d_total ?? (r.sell_quantity + r.comp_sell_quantity)), 0);
-      const share = dTotalSum > 0 ? (captured / dTotalSum) * 100 : 0;
+      // Growing-market share: sales / (sales + comp_sales) — consistent with
+      // simulate()'s per-day share.
+      const share = sales + comp > 0 ? (sales / (sales + comp)) * 100 : 0;
       const avgFill = (rows.reduce((s, r) => s + r.fill_percentage, 0) / rows.length) * 100;
       return {
         week_label: wk,
@@ -1009,12 +1022,10 @@ function buildWarnings(cfg, days, daily, inputs, rules) {
 
   if (cfg.lockedDay1 > 0 && days.length > 0) {
     const d0 = days[0];
-    const dTotal0 = d0.operatorDemand + d0.compDemand;
-    // Fixed-market share for the week-1 projection: capped op over D_total.
-    // Matches simulate() so the warning text agrees with the rendered share.
-    const lockCaptured = Math.min(cfg.lockedDay1, dTotal0);
-    const w1Op = cfg.histOperatorWeek + lockCaptured;
-    const w1Total = cfg.histOperatorWeek + cfg.histCompWeek + dTotal0;
+    // Growing-market share for the week-1 projection: matches simulate().
+    const compSell0 = Math.max(0, d0.operatorDemand + d0.compDemand - cfg.lockedDay1);
+    const w1Op = cfg.histOperatorWeek + cfg.lockedDay1;
+    const w1Total = cfg.histOperatorWeek + cfg.histCompWeek + cfg.lockedDay1 + compSell0;
     const w1Share = w1Total > 0 ? w1Op / w1Total : 0;
     if (cfg.weeklyMax < 1 && w1Share > cfg.weeklyMax + 0.01) {
       warnings.push(

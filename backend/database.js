@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { SYSTEM_PROFILES } from './lib/defaultRules.js';
+import { BU_SCENARIOS } from './lib/buScenarios.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -130,6 +131,33 @@ function seedSystemProfiles(wrapper) {
   }
 }
 
+// Seed the 12 BU reference scenarios so users can load any of them from the
+// Scenarios tab on first open. Only inserts entries that don't already exist
+// (matched by name), so user-modified or user-deleted records are respected.
+function seedBuScenarios(wrapper) {
+  const ts = nowIso();
+  for (const sc of BU_SCENARIOS) {
+    const existing = wrapper
+      .prepare('SELECT id FROM scenarios WHERE name = ?')
+      .get(sc.name);
+    if (existing) continue;
+    wrapper
+      .prepare(
+        `INSERT INTO scenarios (name, description, operator_label, inputs_json, rules_json, rule_profile_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`
+      )
+      .run(
+        sc.name,
+        sc.description,
+        sc.inputs.operator_label || 'Operator',
+        JSON.stringify(sc.inputs),
+        null, // use default rules
+        ts,
+        ts
+      );
+  }
+}
+
 export async function getDb() {
   if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
   const SQL = await initSqlJs();
@@ -144,5 +172,6 @@ export async function getDb() {
   const wrapper = new DatabaseWrapper(db, DB_PATH);
   wrapper.save();
   seedSystemProfiles(wrapper);
+  seedBuScenarios(wrapper);
   return wrapper;
 }

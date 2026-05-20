@@ -22,13 +22,10 @@ export default function ExplainabilityTable({ result, monthlyFloor }) {
   const rows = daily.map((r) => {
     const mode = r.mode;
     const vd = r.operator_demand > 0 ? (r.sell_quantity / r.operator_demand) * 100 : 0;
-    // Match backend buildWeekly: fixed-market share uses capped operator
-    // contribution (op_captured) over total market demand (d_total). Falling
-    // back to old fields keeps this safe against stale responses.
-    const capRow = r.op_captured ?? Math.min(r.sell_quantity, r.sell_quantity + r.comp_sell_quantity);
-    const dRow = r.d_total ?? (r.sell_quantity + r.comp_sell_quantity);
-    rwk[r.week_label] = (rwk[r.week_label] || 0) + capRow;
-    rtk[r.week_label] = (rtk[r.week_label] || 0) + dRow;
+    // Growing-market share: sales / (sales + comp_sales) — matches backend
+    // buildWeekly under the reverted #24 design.
+    rwk[r.week_label] = (rwk[r.week_label] || 0) + r.sell_quantity;
+    rtk[r.week_label] = (rtk[r.week_label] || 0) + r.sell_quantity + r.comp_sell_quantity;
     const wp = rtk[r.week_label] > 0 ? (rwk[r.week_label] / rtk[r.week_label]) * 100 : 0;
 
     let driver = '';

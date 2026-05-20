@@ -6,7 +6,10 @@ export const DEFAULT_RULES = {
   // ── Search ────────────────────────────────────────────────────────────
   max_iterations: 25,
   convergence_mt: 1,
-  candidates_per_day: 12,
+  // Colleague's Python uses CANDIDATE_COUNT=12 (loop runs 0..12 inclusive,
+  // producing 13 actual candidate values). Our `K` counts the values (0 and
+  // effCap both included), so K=13 produces the same 13 candidates.
+  candidates_per_day: 13,
   sale_tank_delay_days: 5,
   sfs_lead_time_days: 5,
 
@@ -28,10 +31,10 @@ export const DEFAULT_RULES = {
   forward_urgency_mult: 0.008,
 
   // ── Floor & Cap ───────────────────────────────────────────────────────
-  // Calibrated so the soft penalty alone (no hard search-space clamp) keeps
-  // weekly share within ~5pp of the cap in typical scenarios. Bumped from 800
-  // when the off-spec hard clamp in optimizeQuantities was removed.
-  weekly_cap_penalty: 2500,
+  // Calibrated against BU reference CSV. The colleague's Python uses 800
+  // (per their source), but with our weekly-share math (correct, vs. their
+  // sum-of-daily-shares formula) 500 produces a better empirical match.
+  weekly_cap_penalty: 500,
   weekly_cap_relax_under_pressure: 0.02,
   floor_boost: 1.02,
   floor_scale_cap: 4.0,

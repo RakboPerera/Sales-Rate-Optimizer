@@ -11,11 +11,11 @@ import ExplainabilityTable from '../components/ExplainabilityTable.jsx';
 import WeeklyCards from '../components/WeeklyCards.jsx';
 import Modal from '../components/Modal.jsx';
 import Toast from '../components/Toast.jsx';
-import StrategyTabs from '../components/StrategyTabs.jsx';
 import { FieldRow, NumberField, TextField, DateField, Slider } from '../components/Field.jsx';
 
 import { inputsReducer, initialState } from '../state/inputsReducer.js';
-import { STRATEGIES, getStrategy } from '../state/strategyPresets.js';
+import { DEFAULT_INPUTS } from '../state/defaultInputs.js';
+import { DEFAULT_RULES } from '../state/defaultRules.js';
 import api from '../api.js';
 import { exportResultsToPdf } from '../utils/exportPdf.js';
 
@@ -51,7 +51,6 @@ export default function OptimizerPage() {
   const [fieldErrors, setFieldErrors] = useState({}); // { field_name: 'message', ... }
   const [toast, setToast] = useState(null);
   const [tab, setTab] = useState('daily');
-  const [strategyId, setStrategyId] = useState(initialFromNav ? 'custom' : 'custom');
   const [showSave, setShowSave] = useState(false);
   const [showSaveProfile, setShowSaveProfile] = useState(false);
   const [scenarioForm, setScenarioForm] = useState({ name: '', description: '', editingId: null });
@@ -101,55 +100,18 @@ export default function OptimizerPage() {
     }
   };
 
-  // Revert the sidebar to the active tab's original preset values, clearing
-  // any user edits made since the tab was selected. Useful after experimenting.
-  const resetCurrentStrategy = () => {
-    const strat = getStrategy(strategyId);
+  // Revert the sidebar to the project defaults, clearing any user edits.
+  const resetToDefaults = () => {
     dispatch({
       type: 'LOAD_SCENARIO',
-      inputs: strat.inputs,
-      rules: strat.rules,
+      inputs: DEFAULT_INPUTS,
+      rules: DEFAULT_RULES,
       rule_profile_id: null,
     });
     setResult(null);
     setError(null);
     setFieldErrors({});
-    setToast({ message: `Reset to "${strat.name}" preset.`, kind: 'info' });
-  };
-
-  // Strategy tabs: switching loads a preset; for the three showcase strategies
-  // we also auto-run the optimizer so the demo flow is one click.
-  const switchStrategy = async (id) => {
-    if (id === strategyId) return;
-    const strat = getStrategy(id);
-    setStrategyId(id);
-    dispatch({
-      type: 'LOAD_SCENARIO',
-      inputs: strat.inputs,
-      rules: strat.rules,
-      rule_profile_id: null,
-    });
-    setResult(null);
-    setError(null);
-    setFieldErrors({});
-    // Auto-run for showcase strategies (not Custom)
-    if (!strat.autoRun) return;
-    setLoading(true);
-    try {
-      const r = await api.post('/optimize', {
-        inputs: strat.inputs,
-        rules: strat.rules,
-        rule_profile_id: null,
-        operator_label: strat.inputs.operator_label || 'Operator',
-      });
-      setResult(r.data);
-      setTab('daily');
-    } catch (e) {
-      setError(e.message || 'Optimizer failed.');
-      if (e.field) setFieldErrors({ [e.field]: e.message || 'Invalid value' });
-    } finally {
-      setLoading(false);
-    }
+    setToast({ message: 'Reset to defaults.', kind: 'info' });
   };
 
   const openSaveScenario = () => {
@@ -277,7 +239,6 @@ export default function OptimizerPage() {
 
   return (
     <div className="optimizer-page">
-      <StrategyTabs activeId={strategyId} onChange={switchStrategy} />
       <div className="optimizer-layout">
         <Sidebar
           state={state}
@@ -310,10 +271,10 @@ export default function OptimizerPage() {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={resetCurrentStrategy}
-            title={`Revert sidebar inputs to the "${getStrategy(strategyId).name}" preset`}
+            onClick={resetToDefaults}
+            title="Revert sidebar inputs to the project defaults"
           >
-            <RotateCcw size={12} /> Reset this strategy
+            <RotateCcw size={12} /> Reset to defaults
           </button>
         </div>
 
@@ -338,7 +299,7 @@ export default function OptimizerPage() {
                 </p>
                 <p style={{ marginTop: 6 }}>Quick start:</p>
                 <ol>
-                  <li>Try <strong>Live preset</strong> (top-right) for a realistic scenario.</li>
+                  <li>Open <strong>Scenarios</strong> in the top nav to load one of the pre-seeded BU test scenarios.</li>
                   <li>Press <strong>Run optimizer</strong> and explore the results tabs.</li>
                   <li>Open <strong>Advanced — Model Rules</strong> to see how to tune the engine.</li>
                 </ol>

@@ -5,7 +5,7 @@ export const DEFAULT_RULES = {
   // Search
   max_iterations: 25,
   convergence_mt: 1,
-  candidates_per_day: 12,
+  candidates_per_day: 13,
   sale_tank_delay_days: 5,
   sfs_lead_time_days: 5,
 
@@ -20,7 +20,7 @@ export const DEFAULT_RULES = {
   forward_urgency_mult: 0.008,
 
   // Floor / Cap
-  weekly_cap_penalty: 2500,
+  weekly_cap_penalty: 500,
   weekly_cap_relax_under_pressure: 0.02,
   floor_boost: 1.02,
   floor_scale_cap: 4.0,

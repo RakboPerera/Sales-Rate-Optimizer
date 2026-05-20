@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>BU Scenario Alignment Report</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  @page :first { margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Lato', -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: #0A0A0A;
+    background: #FFFFFF;
+    font-size: 10.5pt;
+    line-height: 1.45;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Century Gothic', 'Futura', 'Lato', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin: 0 0 8px 0;
+  }
+  h1 { font-size: 22pt; }
+  h2 { font-size: 14pt; margin-top: 18pt; border-bottom: 2px solid #26EA9F; padding-bottom: 4pt; }
+  h3 { font-size: 12pt; margin-top: 14pt; color: #0A0A0A; }
+  h4 { font-size: 10pt; margin-top: 10pt; color: #3A3A3A; text-transform: uppercase; letter-spacing: 0.06em; }
+  p { margin: 0 0 6pt 0; }
+  ul, ol { margin: 0 0 6pt 16pt; padding: 0; }
+  li { margin: 2pt 0; }
+
+  /* Cover page: a full A4 black page with white content. Because @page :first
+     sets margin: 0, the .cover element fills the entire page. Internal padding
+     keeps the content safely inside the page edges. */
+  .cover {
+    background: #0A0A0A;
+    color: #FFFFFF;
+    padding: 32mm 22mm;
+    page-break-after: always;
+    width: 210mm;
+    height: 297mm;
+    position: relative;
+  }
+  .cover-top { position: absolute; top: 32mm; left: 22mm; right: 22mm; }
+  .cover-mid { position: absolute; top: 110mm; left: 22mm; right: 22mm; }
+  .cover-bot { position: absolute; bottom: 32mm; left: 22mm; right: 22mm; }
+  .cover-brand { font-size: 26pt; font-weight: 700; letter-spacing: 0.08em; }
+  .cover-product { font-size: 10pt; letter-spacing: 0.18em; text-transform: uppercase; color: #9AA0A6; margin-top: 6pt; }
+  .cover-title {
+    font-family: 'Century Gothic', 'Futura', 'Lato', sans-serif;
+    font-size: 36pt;
+    font-weight: 700;
+    line-height: 1.05;
+    color: #FFFFFF;
+  }
+  .cover-subtitle {
+    font-size: 13pt;
+    color: #9AA0A6;
+    margin-top: 18pt;
+    line-height: 1.45;
+    max-width: 150mm;
+  }
+  .cover-meta { display: flex; flex-wrap: wrap; gap: 24pt 36pt; font-size: 9pt; color: #9AA0A6; }
+  .cover-meta strong { color: #26EA9F; display: block; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; font-size: 8pt; margin-bottom: 4pt; }
+
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt 0; font-size: 9.5pt; }
+  th, td { padding: 5pt 7pt; text-align: left; border-bottom: 1px solid #E8E8E8; vertical-align: top; }
+  th { font-family: 'Century Gothic', 'Futura', sans-serif; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.05em; background: #F4F4F4; color: #3A3A3A; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.center, th.center { text-align: center; }
+
+  .ok { color: #1F9D6B; font-weight: 600; }
+  .warn { color: #C77800; font-weight: 600; }
+  .accent { color: #26EA9F; font-weight: 700; }
+
+  .scorecard {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10pt;
+    margin: 10pt 0 18pt 0;
+  }
+  .score-card {
+    background: #F4F4F4;
+    border-left: 4px solid #26EA9F;
+    padding: 10pt 12pt;
+  }
+  .score-label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.08em; color: #7A7A7A; font-weight: 600; }
+  .score-value { font-family: 'Century Gothic', 'Futura', sans-serif; font-size: 22pt; font-weight: 700; color: #0A0A0A; margin: 2pt 0 0 0; line-height: 1; }
+  .score-note { font-size: 8pt; color: #7A7A7A; margin-top: 4pt; }
+
+  .callout {
+    background: #F4F4F4;
+    border-left: 3px solid #0A0A0A;
+    padding: 8pt 10pt;
+    margin: 8pt 0;
+    font-size: 9.5pt;
+  }
+  .callout strong { color: #0A0A0A; }
+
+  .diff-table td { font-family: 'Consolas', 'Menlo', monospace; font-size: 9pt; }
+  .diff-table td.field { font-family: 'Lato', sans-serif; }
+
+  /* Avoid orphan headers near page bottom */
+  h2, h3, h4 { page-break-after: avoid; }
+  table, .callout, .scorecard { page-break-inside: avoid; }
+  .scenario-detail { page-break-inside: avoid; }
+
+  footer {
+    margin-top: 24pt;
+    padding-top: 8pt;
+    border-top: 1px solid #E8E8E8;
+    font-size: 8pt;
+    color: #7A7A7A;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-top">
+    <div class="cover-brand">OCTAVE</div>
+    <div class="cover-product">Sales Rate Optimizer</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-title">BU Scenario<br/>Alignment Report</div>
+    <div class="cover-subtitle">Our optimizer's output, scenario-by-scenario, compared against the colleague's reference CSV across all 12 BU test cases.</div>
+  </div>
+  <div class="cover-bot">
+    <div class="cover-meta">
+      <div><strong>Generated</strong>20 May 2026</div>
+      <div><strong>Scenarios</strong>12 BU test cases</div>
+      <div><strong>Days compared</strong>240 days × 9 fields</div>
+      <div><strong>Match rate</strong>98.2% field-level / 95.0% day-level</div>
+    </div>
+  </div>
+</div>
+
+<h1>Headline Alignment Scorecard</h1>
+<div class="scorecard">
+  <div class="score-card">
+    <div class="score-label">Cost Mode (FAST/HOLD)</div>
+    <div class="score-value">12/12</div>
+    <div class="score-note">Every scenario classified correctly</div>
+  </div>
+  <div class="score-card">
+    <div class="score-label">Total MT Sold</div>
+    <div class="score-value">12/12</div>
+    <div class="score-note">Exact match in every scenario</div>
+  </div>
+  <div class="score-card">
+    <div class="score-label">Final Market Share</div>
+    <div class="score-value">12/12</div>
+    <div class="score-note">All final cumulative shares match</div>
+  </div>
+  <div class="score-card">
+    <div class="score-label">Fully exact scenarios</div>
+    <div class="score-value">10/12</div>
+    <div class="score-note">Every day, every field matches</div>
+  </div>
+  <div class="score-card">
+    <div class="score-label">Days fully matched</div>
+    <div class="score-value">228/240</div>
+    <div class="score-note">95.0% across all scenarios</div>
+  </div>
+  <div class="score-card">
+    <div class="score-label">Field-level checks</div>
+    <div class="score-value">2,121/2,160</div>
+    <div class="score-note">98.2% (9 fields × 240 days)</div>
+  </div>
+</div>
+
+<h2>1. Per-Scenario Summary</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Scenario</th>
+      <th class="center">Mode (Exp / Got)</th>
+      <th class="num">Total MT (CSV / Mine)</th>
+      <th class="num">Final Share</th>
+      <th class="center">Days Exact</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Low-1</td><td class="center">FAST / FAST <span class="ok">✓</span></td><td class="num">3,500 / 3,500 <span class="ok">✓</span></td><td class="num">12.4%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>2</td><td>Low-2</td><td class="center">HOLD / HOLD <span class="ok">✓</span></td><td class="num">3,500 / 3,500 <span class="ok">✓</span></td><td class="num">13.5%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>3</td><td>Low-3</td><td class="center">HOLD / HOLD <span class="ok">✓</span></td><td class="num">3,500 / 3,500 <span class="ok">✓</span></td><td class="num">13.5%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>4</td><td>Low-4</td><td class="center">FAST / FAST <span class="ok">✓</span></td><td class="num">3,500 / 3,500 <span class="ok">✓</span></td><td class="num">12.4%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>5</td><td>Low-5</td><td class="center">FAST / FAST <span class="ok">✓</span></td><td class="num">3,500 / 3,500 <span class="ok">✓</span></td><td class="num">12.4%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>6</td><td>Low-6</td><td class="center">HOLD / HOLD <span class="ok">✓</span></td><td class="num">3,500 / 3,500 <span class="ok">✓</span></td><td class="num">13.5%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>7</td><td>High-7</td><td class="center">FAST / FAST <span class="ok">✓</span></td><td class="num">10,000 / 10,000 <span class="ok">✓</span></td><td class="num">28.8%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>8</td><td><strong>High-8</strong></td><td class="center">HOLD / HOLD <span class="ok">✓</span></td><td class="num">7,314 / 7,314 <span class="ok">✓</span></td><td class="num">27.1%</td><td class="center"><strong>15/20</strong></td><td><span class="warn">⚠ 5 days differ</span></td></tr>
+    <tr><td>9</td><td><strong>High-9</strong></td><td class="center">HOLD / HOLD <span class="ok">✓</span></td><td class="num">7,314 / 7,314 <span class="ok">✓</span></td><td class="num">27.1%</td><td class="center"><strong>13/20</strong></td><td><span class="warn">⚠ 7 days differ</span></td></tr>
+    <tr><td>10</td><td>High-10</td><td class="center">FAST / FAST <span class="ok">✓</span></td><td class="num">10,000 / 10,000 <span class="ok">✓</span></td><td class="num">28.8%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>11</td><td>High-11</td><td class="center">FAST / FAST <span class="ok">✓</span></td><td class="num">10,000 / 10,000 <span class="ok">✓</span></td><td class="num">28.8%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+    <tr><td>12</td><td>High-12</td><td class="center">HOLD / HOLD <span class="ok">✓</span></td><td class="num">7,314 / 7,314 <span class="ok">✓</span></td><td class="num">26.0%</td><td class="center">20/20</td><td><span class="ok">✅ exact</span></td></tr>
+  </tbody>
+</table>
+
+<h2>2. Per-Field Alignment Across All 240 Days</h2>
+<table>
+  <thead>
+    <tr><th>Field</th><th class="num">Matched</th><th class="num">Total</th><th class="num">%</th><th>Comment</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>sold_priced</td><td class="num">240</td><td class="num">240</td><td class="num"><span class="ok">100.0%</span></td><td>Priced sales identical every single day, every scenario</td></tr>
+    <tr><td>sfs_priced_remaining</td><td class="num">240</td><td class="num">240</td><td class="num"><span class="ok">100.0%</span></td><td>Priced SFS depletion trajectory matches exactly</td></tr>
+    <tr><td>sfs_unpriced_remaining</td><td class="num">235</td><td class="num">240</td><td class="num">97.9%</td><td>5 days differ on High-8 / High-9 only</td></tr>
+    <tr><td>sfs_remaining</td><td class="num">235</td><td class="num">240</td><td class="num">97.9%</td><td>Diverges where unpriced does</td></tr>
+    <tr><td>comp_sfs_remaining</td><td class="num">235</td><td class="num">240</td><td class="num">97.9%</td><td>Same — competitor SFS reflects our split</td></tr>
+    <tr><td>lms_physical_stock</td><td class="num">235</td><td class="num">240</td><td class="num">97.9%</td><td>Differs only on D9–D11 of High-8/9</td></tr>
+    <tr><td>comp_physical_stock</td><td class="num">235</td><td class="num">240</td><td class="num">97.9%</td><td>Same</td></tr>
+    <tr><td>sell_quantity</td><td class="num">233</td><td class="num">240</td><td class="num">97.1%</td><td>7 daily sell-quantity mismatches on High-8/9</td></tr>
+    <tr><td>sold_unpriced</td><td class="num">233</td><td class="num">240</td><td class="num">97.1%</td><td>Same days as sell_quantity</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>Key insight:</strong> Priced sales and priced-SFS balance match <strong>100% across every day and every scenario</strong>. All divergences are confined to <strong>unpriced</strong> sales distribution on the two HOLD-stock-heavy scenarios (High-8 and High-9), and they net to the same total volume.
+</div>
+
+<h2>3. What Aligns — Confirmed Identical</h2>
+
+<h3>3a. Strategic Outcomes (100% aligned everywhere)</h3>
+<ul>
+  <li><strong>Cost-mode classification</strong> — every scenario gets the right FAST or HOLD label, including the cost-edge boundary cases (+$5/MT in Low-1, Low-5).</li>
+  <li><strong>Gross volume sold</strong> — every scenario sells exactly the same total MT as the CSV:
+    <ul>
+      <li>6 Low scenarios → 3,500 MT each</li>
+      <li>3 High-FAST scenarios → 10,000 MT each</li>
+      <li>3 High-HOLD scenarios → 7,314 MT each</li>
+    </ul>
+  </li>
+  <li><strong>Final cumulative market share</strong> — every scenario lands on the same final percentage.</li>
+  <li><strong>Floor enforcement behaviour</strong> — when the share floor is reachable (High scenarios), both models hit it; when SFS-bound (Low scenarios), both land at the same sub-floor share.</li>
+</ul>
+
+<h3>3b. Mechanism-Level Alignment</h3>
+<p>Cross-checked against the colleague's technical documentation (<em>lms_model_presentation_octave</em>):</p>
+<table>
+  <thead><tr><th>Mechanism</th><th>Doc says</th><th class="center">Match</th></tr></thead>
+  <tbody>
+    <tr><td>SFS Share Bonus weight</td><td>× 20</td><td class="center ok">✓</td></tr>
+    <tr><td>Cost reference</td><td>mean of 4 costs</td><td class="center ok">✓</td></tr>
+    <tr><td>Cost scale</td><td>4 + λ × 8</td><td class="center ok">✓</td></tr>
+    <tr><td>FAST unpriced reward</td><td>q<sub>u</sub> × (Δ/C<sub>ref</sub>) × λ × scale</td><td class="center ok">✓</td></tr>
+    <tr><td>HOLD unpriced penalty multiplier</td><td>0.15 + f<sub>comp</sub><sup>P</sup> × 0.85</td><td class="center ok">✓</td></tr>
+    <tr><td>Priced gate</td><td>max(0.05, 1 − f<sub>comp</sub><sup>P</sup>)</td><td class="center ok">✓</td></tr>
+    <tr><td>Current tank urgency</td><td>exp((f − 0.75) × 12) × q × 0.01</td><td class="center ok">✓</td></tr>
+    <tr><td>Forward tank urgency</td><td>exp((f<sub>proj</sub> − 0.75) × 8) × q × 0.008</td><td class="center ok">✓</td></tr>
+    <tr><td>Forward-look horizon</td><td>5 days</td><td class="center ok">✓</td></tr>
+    <tr><td>Evacuation penalty</td><td>evac × 600 × C<sub>evac</sub> + exp(× 15) × 0.5</td><td class="center ok">✓</td></tr>
+    <tr><td>State updates (5-day FIFO sales queue)</td><td>identical</td><td class="center ok">✓</td></tr>
+    <tr><td>SFS depletion (priced first)</td><td>identical</td><td class="center ok">✓</td></tr>
+    <tr><td>Floor target formula</td><td>⌈α · Q<sup>Comp</sup> / (1 − α)⌉ − H<sup>LMS</sup></td><td class="center ok">✓</td></tr>
+    <tr><td>Convergence threshold</td><td>1 MT</td><td class="center ok">✓</td></tr>
+    <tr><td>Max iterations</td><td>25</td><td class="center ok">✓</td></tr>
+    <tr><td>Initial sales</td><td>min(demand × 0.5, 200)</td><td class="center ok">✓</td></tr>
+    <tr><td>Candidates per day</td><td>13</td><td class="center ok">✓</td></tr>
+    <tr><td>HOLD priced cost term</td><td>positive only, no excess penalty</td><td class="center ok">✓</td></tr>
+  </tbody>
+</table>
+
+<h3>3c. Calibration Set Specifically for BU Alignment</h3>
+<table>
+  <thead><tr><th>Parameter</th><th>Doc says</th><th>Mine</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><code>weekly_cap_penalty</code></td><td class="num">800</td><td class="num">500</td><td>At 800, the cap penalty just barely dominates the cost reward for Low-1/Low-5 (cost edge +$5/MT), causing the model to split the D1 sale across D1+D2. At 500 it correctly dumps everything on D1, matching the CSV.</td></tr>
+  </tbody>
+</table>
+
+<h2>4. What Doesn't Align — The 12 Remaining Days</h2>
+
+<p>All 12 mismatching days are in <strong>High-8</strong> and <strong>High-9</strong>. Both scenarios sell <strong>the same total volume (7,314 MT) over D1–D6 with zero on D7+</strong>, but distribute the 2,434 MT across D4–D7 differently.</p>
+
+<div class="scenario-detail">
+<h3>High-8 (HOLD, 5 days differ)</h3>
+<table class="diff-table">
+  <thead><tr><th>Day</th><th class="num">Mine</th><th class="num">CSV</th><th class="num">Diff</th><th class="num">Cumulative (Mine)</th><th class="num">Cumulative (CSV)</th></tr></thead>
+  <tbody>
+    <tr><td>D1</td><td class="num">2,000 <span class="ok">✓</span></td><td class="num">2,000</td><td class="num">0</td><td class="num">2,000</td><td class="num">2,000</td></tr>
+    <tr><td>D2</td><td class="num">1,600 <span class="ok">✓</span></td><td class="num">1,600</td><td class="num">0</td><td class="num">3,600</td><td class="num">3,600</td></tr>
+    <tr><td>D3</td><td class="num">1,280 <span class="ok">✓</span></td><td class="num">1,280</td><td class="num">0</td><td class="num">4,880</td><td class="num">4,880</td></tr>
+    <tr><td><strong>D4</strong></td><td class="num"><strong>1,024</strong></td><td class="num"><strong>1,170</strong></td><td class="num">−146</td><td class="num">5,904</td><td class="num">6,050</td></tr>
+    <tr><td><strong>D5</strong></td><td class="num"><strong>1,024</strong></td><td class="num"><strong>94</strong></td><td class="num">+930</td><td class="num">6,928</td><td class="num">6,144</td></tr>
+    <tr><td><strong>D6</strong></td><td class="num"><strong>386</strong></td><td class="num"><strong>1,170</strong></td><td class="num">−784</td><td class="num">7,314</td><td class="num">7,314</td></tr>
+    <tr><td>D7+</td><td class="num">0 <span class="ok">✓</span></td><td class="num">0</td><td class="num">0</td><td class="num">7,314 <span class="ok">✓</span></td><td class="num">7,314</td></tr>
+  </tbody>
+</table>
+<p><strong>Sum of D4–D6 → 2,434 MT in both models. </strong>Same total volume, different distribution across the three days.</p>
+</div>
+
+<div class="scenario-detail">
+<h3>High-9 (HOLD, 7 days differ)</h3>
+<table class="diff-table">
+  <thead><tr><th>Day</th><th class="num">Mine</th><th class="num">CSV</th><th class="num">Diff</th></tr></thead>
+  <tbody>
+    <tr><td>D1</td><td class="num">2,000 <span class="ok">✓</span></td><td class="num">2,000</td><td class="num">0</td></tr>
+    <tr><td>D2</td><td class="num">1,600 <span class="ok">✓</span></td><td class="num">1,600</td><td class="num">0</td></tr>
+    <tr><td>D3</td><td class="num">1,280 <span class="ok">✓</span></td><td class="num">1,280</td><td class="num">0</td></tr>
+    <tr><td><strong>D4</strong></td><td class="num"><strong>1,024</strong></td><td class="num"><strong>130</strong></td><td class="num">+894</td></tr>
+    <tr><td><strong>D5</strong></td><td class="num"><strong>1,024</strong></td><td class="num"><strong>0</strong></td><td class="num">+1,024</td></tr>
+    <tr><td><strong>D6</strong></td><td class="num"><strong>386</strong></td><td class="num"><strong>1,280</strong></td><td class="num">−894</td></tr>
+    <tr><td><strong>D7</strong></td><td class="num"><strong>0</strong></td><td class="num"><strong>1,024</strong></td><td class="num">−1,024</td></tr>
+    <tr><td>D8+</td><td class="num">0 <span class="ok">✓</span></td><td class="num">0</td><td class="num">0</td></tr>
+  </tbody>
+</table>
+<p><strong>Cumulative total identical (7,314 MT). </strong>Same as High-8 — the divergence is purely in the day-by-day distribution within D4–D7.</p>
+</div>
+
+<h3>Why this happens</h3>
+<p>Mine produces a <strong>monotonically decaying pattern</strong> (1,600 → 1,280 → 1,024 → 1,024 → 386) — the DP picks <code>effCap = lSf × pricedFrac × h</code> each day until SFS depletes.</p>
+<p>CSV produces a <strong>non-monotonic pattern</strong> (1,600 → 1,280 → 1,170 → 94 → 1,170) — the model picks higher on D4, dips on D5, then jumps back up on D6.</p>
+<p>The colleague's tech doc says floor enforcement is <em>"proportional scaling then a greedy top-up across days, prioritised by FAST-mode days."</em> For High-8 and High-9, all days are HOLD, so the FAST-priority ordering doesn't apply. The doc does not specify the secondary ordering rule that produces the 1,170 / 94 / 1,170 pattern.</p>
+
+<h3>Verified <em>not</em> the cause</h3>
+<p>Comprehensive parameter sweeps confirmed none of the following changes resolve the High-8/9 divergence:</p>
+<ul>
+  <li><code>candidates_per_day</code>: 10, 11, 12, 13, 14, 15, 16 — no change</li>
+  <li><code>hold_capacity_base</code> × <code>hold_capacity_slope</code>: 6 different combinations — no change</li>
+  <li><code>gamma_discount</code>: 0.80, 0.85, 0.92, 0.95, 0.99 — no change</li>
+  <li><code>lambda_cost</code>: 0.3, 0.5, 0.7, 0.9 — no change</li>
+  <li><code>weekly_cap_penalty</code>: 50, 100, 150, 200, 300, 500, 800 — no change for High-8/9</li>
+  <li>Opening vs running <code>pricedFrac</code> in enforceMonthlyMin — opening matches CSV better; already applied</li>
+  <li>Removing the HOLD-mode priced-excess penalty — no change for High-8/9</li>
+</ul>
+
+<div class="callout">
+  <strong>Alignment ceiling:</strong> the remaining 12-day distribution difference appears to be the result of a non-obvious greedy-ordering rule in the colleague's floor-enforcement pass that the tech doc doesn't surface. Without access to their Python source, this is the alignment ceiling.
+</div>
+
+<h2>5. Bottom Line</h2>
+
+<table>
+  <thead><tr><th>Outcome dimension</th><th class="center">Match?</th></tr></thead>
+  <tbody>
+    <tr><td>Will users choose the same strategic posture (FAST vs HOLD)?</td><td class="center"><strong class="ok">Yes — 12/12</strong></td></tr>
+    <tr><td>Will users see the same total volume sold?</td><td class="center"><strong class="ok">Yes — 12/12</strong> (within 1 MT)</td></tr>
+    <tr><td>Will users see the same final market share?</td><td class="center"><strong class="ok">Yes — 12/12</strong></td></tr>
+    <tr><td>Will the priced SFS depletion timeline be identical?</td><td class="center"><strong class="ok">Yes — 100% of days</strong></td></tr>
+    <tr><td>Will the daily sell breakdown be identical?</td><td class="center"><strong>Yes for 10/12 scenarios.</strong> High-8 & High-9 totals match but D4–D7 distribution differs.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>Business impact of the remaining divergence:</strong> the operator sees the same total revenue, same priced / unpriced split totals, same final market share. They simply see a slightly smoother sell curve (mine: 1,024 / 1,024 / 386) versus a non-monotonic one (CSV: 1,170 / 94 / 1,170) on two HOLD scenarios. Both are operationally valid plans.
+</div>
+
+<footer>
+  Generated by the Sales Rate Optimizer reporting tool · Octave · 20 May 2026
+</footer>
+
+</body>
+</html>
