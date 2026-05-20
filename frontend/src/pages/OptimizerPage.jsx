@@ -1,6 +1,6 @@
 import { useReducer, useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Play, Save, RotateCcw, Database, FileSpreadsheet, FileDown } from 'lucide-react';
+import { Play, Save, RotateCcw, Database, FileSpreadsheet, FileDown, X } from 'lucide-react';
 
 import Sidebar from '../components/Sidebar.jsx';
 import KpiCards from '../components/KpiCards.jsx';
@@ -55,6 +55,12 @@ export default function OptimizerPage() {
   const [showSaveProfile, setShowSaveProfile] = useState(false);
   const [scenarioForm, setScenarioForm] = useState({ name: '', description: '', editingId: null });
   const [profileForm, setProfileForm] = useState({ name: '', description: '' });
+  // Track the currently loaded scenario so the user can see what's active in
+  // the sidebar (especially useful when scenario values overlap with defaults,
+  // making the Load action otherwise invisible).
+  const [loadedScenarioName, setLoadedScenarioName] = useState(
+    initialFromNav?.name || null
+  );
 
   const resultsRef = useRef(null);
   const opLabel = state.inputs.operator_label || 'Operator';
@@ -111,7 +117,15 @@ export default function OptimizerPage() {
     setResult(null);
     setError(null);
     setFieldErrors({});
+    setLoadedScenarioName(null);
     setToast({ message: 'Reset to defaults.', kind: 'info' });
+  };
+
+  // Clear the loaded-scenario banner without touching sidebar values. The user
+  // keeps whatever they've edited so far; we just stop claiming it represents
+  // the named scenario (which would be misleading after edits anyway).
+  const clearLoadedScenario = () => {
+    setLoadedScenarioName(null);
   };
 
   const openSaveScenario = () => {
@@ -249,6 +263,24 @@ export default function OptimizerPage() {
         />
 
       <div className="results-area">
+        {loadedScenarioName && (
+          <div className="loaded-scenario-banner">
+            <span className="loaded-scenario-label">Loaded scenario:</span>
+            <span className="loaded-scenario-name">{loadedScenarioName}</span>
+            <span className="loaded-scenario-hint">
+              Sidebar reflects this scenario's inputs &amp; rules.
+            </span>
+            <button
+              type="button"
+              className="loaded-scenario-clear"
+              onClick={clearLoadedScenario}
+              title="Dismiss this banner (sidebar values are unchanged)"
+            >
+              <X size={12} /> Clear
+            </button>
+          </div>
+        )}
+
         <div className="action-bar">
           <button
             type="button"
